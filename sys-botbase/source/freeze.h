@@ -1,4 +1,5 @@
 #include <switch.h>
+
 #define FREEZE_DIC_LENGTH 255
 
 typedef struct {
@@ -10,6 +11,7 @@ typedef struct {
 } FreezeBlock;
 
 extern FreezeBlock* freezes;
+struct ResponseHandler;
 
 void initFreezes(void);
 void freeFreezes(void);
@@ -17,5 +19,5 @@ int findAddrSlot(u64 addr);
 int findNextEmptySlot();
 int addToFreezeMap(u64 addr, u8* v_data, u64 v_size, u64 tid);
 int removeFromFreezeMap(u64 addr);
-int getFreezeCount(bool print);
+int getFreezeCount(struct ResponseHandler *response);
 u8 clearFreezes(void);

@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <switch.h>
 #include "freeze.h"
+#include "util.h"
 
 FreezeBlock* freezes;
 
@@ -68,7 +69,7 @@ int removeFromFreezeMap(u64 addr)
 	return slot;
 }
 
-int getFreezeCount(bool print)
+int getFreezeCount(struct ResponseHandler *response)
 {
 	int count = 0;
 	for (int i = 0; i < FREEZE_DIC_LENGTH; i++)
@@ -76,10 +77,10 @@ int getFreezeCount(bool print)
 		if (freezes[i].state != 0)
 			++count;
 	}
-	if (print)
+	if (response)
 	{
-		printf("%02X", count);
-		printf("\n");
+		response->responsePrintf(response, "%02X", count);
+		response->responsePrintf(response, "\n");
 	}
 	return count;
 }

@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-int parseArgs(char *origargstr, int (*callback)(int, char **))
+struct ResponseHandler;
+
+int parseArgs(char *origargstr, int (*callback)(int, char **, struct ResponseHandler *), struct ResponseHandler *response)
 {
     char *argstr = malloc(strlen(origargstr) + 1);
     memcpy(argstr, origargstr, strlen(origargstr) + 1);
@@ -17,7 +19,7 @@ int parseArgs(char *origargstr, int (*callback)(int, char **))
 
     if (argc == 0)
     {
-        return (*callback)(argc, NULL);
+        return (*callback)(argc, NULL, response);
     }
 
     char **argv = malloc(sizeof(char *) * argc);
@@ -25,7 +27,7 @@ int parseArgs(char *origargstr, int (*callback)(int, char **))
     for (char *p = strtok(argstr, " \r\n"); p != NULL; p = strtok(NULL, " \r\n")) 
         argv[i++] = p;
 
-    int ret = (*callback)(argc, argv);
+    int ret = (*callback)(argc, argv, response);
     free(argv);
     free(argstr);
     return ret;

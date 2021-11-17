@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/errno.h>
@@ -12,6 +13,7 @@
 #include "args.h"
 #include "util.h"
 #include "freeze.h"
+#include "usbBot.h"
 #include <poll.h>
 
 #define TITLE_ID 0x430000000000000B
@@ -159,7 +161,7 @@ void makeClickSeq(char* seq)
     mutexUnlock(&clickMutex);
 }
 
-int argmain(int argc, char **argv)
+int argmain(int argc, char **argv, struct ResponseHandler *response)
 {
     if (argc == 0)
         return 0;
@@ -171,11 +173,11 @@ int argmain(int argc, char **argv)
         if(argc != 3)
             return 0;
 
-        MetaData meta = getMetaData();
+        MetaData meta = getMetaData(response);
 
         u64 offset = parseStringToInt(argv[1]);
         u64 size = parseStringToInt(argv[2]);
-        peek(meta.heap_base + offset, size);
+        peek(meta.heap_base + offset, size, response);
     }
 
     if (!strcmp(argv[0], "peekAbsolute"))
@@ -185,7 +187,7 @@ int argmain(int argc, char **argv)
 
         u64 offset = parseStringToInt(argv[1]);
         u64 size = parseStringToInt(argv[2]);
-        peek(offset, size);
+        peek(offset, size, response);
     }
 
     if (!strcmp(argv[0], "peekMain"))
@@ -193,11 +195,11 @@ int argmain(int argc, char **argv)
         if(argc != 3)
             return 0;
 
-        MetaData meta = getMetaData();
+        MetaData meta = getMetaData(response);
 
         u64 offset = parseStringToInt(argv[1]);
         u64 size = parseStringToInt(argv[2]);
-        peek(meta.main_nso_base + offset, size);
+        peek(meta.main_nso_base + offset, size, response);
     }
 
     //poke <address in hex or dec> <data in hex or dec>
@@ -206,12 +208,12 @@ int argmain(int argc, char **argv)
         if(argc != 3)
             return 0;
             
-        MetaData meta = getMetaData();
+        MetaData meta = getMetaData(response);
 
         u64 offset = parseStringToInt(argv[1]);
         u64 size = 0;
         u8* data = parseStringToByteBuffer(argv[2], &size);
-        poke(meta.heap_base + offset, size, data);
+        poke(meta.heap_base + offset, size, data, response);
         free(data);
     } 
     
@@ -223,7 +225,7 @@ int argmain(int argc, char **argv)
         u64 offset = parseStringToInt(argv[1]);
         u64 size = 0;
         u8* data = parseStringToByteBuffer(argv[2], &size);
-        poke(offset, size, data);
+        poke(offset, size, data, response);
         free(data);
     }
         
@@ -232,12 +234,12 @@ int argmain(int argc, char **argv)
         if(argc != 3)
             return 0;
             
-        MetaData meta = getMetaData();
+        MetaData meta = getMetaData(response);
 
         u64 offset = parseStringToInt(argv[1]);
         u64 size = 0;
         u8* data = parseStringToByteBuffer(argv[2], &size);
-        poke(meta.main_nso_base + offset, size, data);
+        poke(meta.main_nso_base + offset, size, data, response);
         free(data);
     } 
 
@@ -247,7 +249,7 @@ int argmain(int argc, char **argv)
         if(argc != 2)
             return 0;
         HidNpadButton key = parseStringToButton(argv[1]);
-        click(key);
+        click(key, response);
     }
 
     //clickSeq <sequence> eg clickSeq A,W1000,B,W200,DUP,W500,DD,W350,%5000,1500,W2650,%0,0 (some params don't parse correctly, such as DDOWN so use the alt)
@@ -272,7 +274,7 @@ int argmain(int argc, char **argv)
         if(argc != 2)
             return 0;
         HidNpadButton key = parseStringToButton(argv[1]);
-        press(key);
+        press(key, response);
     }
 
     //release <buttontype>
@@ -281,7 +283,7 @@ int argmain(int argc, char **argv)
         if(argc != 2)
             return 0;
         HidNpadButton key = parseStringToButton(argv[1]);
-        release(key);
+        release(key, response);
     }
 
     //setStick <left or right stick> <x value> <y value>
@@ -306,13 +308,13 @@ int argmain(int argc, char **argv)
         if(dyVal > JOYSTICK_MAX) dyVal = JOYSTICK_MAX;
         if(dyVal < JOYSTICK_MIN) dyVal = JOYSTICK_MIN;
 
-        setStickState(side, dxVal, dyVal);
+        setStickState(side, dxVal, dyVal, response);
     }
 
     //detachController
     if(!strcmp(argv[0], "detachController"))
     {
-        detachController();
+        detachController(response);
     }
 
     //configure <mainLoopSleepTime or buttonClickSleepTime> <time in ms>
@@ -362,8 +364,8 @@ int argmain(int argc, char **argv)
     }
 
     if(!strcmp(argv[0], "getTitleID")){
-        MetaData meta = getMetaData();
-        printf("%016lX\n", meta.titleID);
+        MetaData meta = getMetaData(response);
+        response->responsePrintf(response, "%016lX\n", meta.titleID);
     }
 
     if(!strcmp(argv[0], "getSystemLanguage")){
@@ -373,23 +375,23 @@ int argmain(int argc, char **argv)
         SetLanguage language = SetLanguage_ENUS;
         setGetSystemLanguage(&languageCode);   
         setMakeLanguage(languageCode, &language);
-        printf("%d\n", language);
+        response->responsePrintf(response, "%d\n", language);
     }
  
     if(!strcmp(argv[0], "getMainNsoBase")){
-        MetaData meta = getMetaData();
-        printf("%016lX\n", meta.main_nso_base);
+        MetaData meta = getMetaData(response);
+        response->responsePrintf(response, "%016lX\n", meta.main_nso_base);
     }
     
     if(!strcmp(argv[0], "getBuildID")){
-        MetaData meta = getMetaData();
-        printf("%02x%02x%02x%02x%02x%02x%02x%02x\n", meta.buildID[0], meta.buildID[1], meta.buildID[2], meta.buildID[3], meta.buildID[4], meta.buildID[5], meta.buildID[6], meta.buildID[7]);
+        MetaData meta = getMetaData(response);
+        response->responsePrintf(response, "%02x%02x%02x%02x%02x%02x%02x%02x\n", meta.buildID[0], meta.buildID[1], meta.buildID[2], meta.buildID[3], meta.buildID[4], meta.buildID[5], meta.buildID[6], meta.buildID[7]);
 
     }
 
     if(!strcmp(argv[0], "getHeapBase")){
-        MetaData meta = getMetaData();
-        printf("%016lX\n", meta.heap_base);
+        MetaData meta = getMetaData(response);
+        response->responsePrintf(response, "%016lX\n", meta.heap_base);
     }
 
     if(!strcmp(argv[0], "pixelPeek")){
@@ -401,20 +403,20 @@ int argmain(int argc, char **argv)
         Result rc = capsscCaptureForDebug(buf, bSize, &outSize);
 
         if (R_FAILED(rc) && debugResultCodes)
-            printf("capssc, 1204: %d\n", rc);
+            response->responsePrintf(response, "capssc, 1204: %d\n", rc);
         
         u64 i;
         for (i = 0; i < outSize; i++)
         {
-            printf("%02X", buf[i]);
+            response->responsePrintf(response, "%02X", buf[i]);
         }
-        printf("\n");
+        response->responsePrintf(response, "\n");
 
         free(buf);
     }
 
     if(!strcmp(argv[0], "getVersion")){
-        printf("1.9\n");
+        response->responsePrintf(response, "1.9\n");
     }
 	
 	// follow pointers and print absolute offset (little endian, flip it yourself if required)
@@ -426,8 +428,8 @@ int argmain(int argc, char **argv)
 		s64 jumps[argc-1];
 		for (int i = 1; i < argc; i++)
 			jumps[i-1] = parseStringToSignedLong(argv[i]);
-		u64 solved = followMainPointer(jumps, argc-1);
-		printf("%016lX\n", solved);
+		u64 solved = followMainPointer(jumps, argc-1, response);
+		response->responsePrintf(response, "%016lX\n", solved);
 	}
 
     // pointerAll <first (main) jump> <additional jumps> <final jump in pointerexpr> 
@@ -441,9 +443,9 @@ int argmain(int argc, char **argv)
 		s64 jumps[count];
 		for (int i = 1; i < argc-1; i++)
 			jumps[i-1] = parseStringToSignedLong(argv[i]);
-		u64 solved = followMainPointer(jumps, count);
+		u64 solved = followMainPointer(jumps, count, response);
         solved += finalJump;
-		printf("%016lX\n", solved);
+		response->responsePrintf(response, "%016lX\n", solved);
 	}
 	
 	// pointerRelative <first (main) jump> <additional jumps> <final jump in pointerexpr> 
@@ -457,11 +459,11 @@ int argmain(int argc, char **argv)
 		s64 jumps[count];
 		for (int i = 1; i < argc-1; i++)
 			jumps[i-1] = parseStringToSignedLong(argv[i]);
-		u64 solved = followMainPointer(jumps, count);
+		u64 solved = followMainPointer(jumps, count, response);
         solved += finalJump;
-		MetaData meta = getMetaData();
+		MetaData meta = getMetaData(response);
 		solved -= meta.heap_base;
-		printf("%016lX\n", solved);
+		response->responsePrintf(response, "%016lX\n", solved);
 	}
 
     // pointerPeek <amount of bytes in hex or dec> <first (main) jump> <additional jumps> <final jump in pointerexpr>
@@ -476,9 +478,9 @@ int argmain(int argc, char **argv)
 		s64 jumps[count];
 		for (int i = 2; i < argc-1; i++)
 			jumps[i-2] = parseStringToSignedLong(argv[i]);
-		u64 solved = followMainPointer(jumps, count);
+		u64 solved = followMainPointer(jumps, count, response);
         solved += finalJump;
-        peek(solved, size);
+        peek(solved, size, response);
 	}
 
     // pointerPoke <data to be sent> <first (main) jump> <additional jumps> <final jump in pointerexpr>
@@ -492,12 +494,12 @@ int argmain(int argc, char **argv)
 		s64 jumps[count];
 		for (int i = 2; i < argc-1; i++)
 			jumps[i-2] = parseStringToSignedLong(argv[i]);
-		u64 solved = followMainPointer(jumps, count);
+		u64 solved = followMainPointer(jumps, count, response);
         solved += finalJump;
 
 		u64 size;
         u8* data = parseStringToByteBuffer(argv[1], &size);
-        poke(solved, size, data);
+        poke(solved, size, data, response);
         free(data);
 	}
 	
@@ -507,7 +509,7 @@ int argmain(int argc, char **argv)
         if(argc != 3)
             return 0;
 		
-		MetaData meta = getMetaData();
+		MetaData meta = getMetaData(response);
 		
         u64 offset = parseStringToInt(argv[1]);
         u64 size = 0;
@@ -528,7 +530,7 @@ int argmain(int argc, char **argv)
 	// get count of offsets being frozen
 	if (!strcmp(argv[0], "freezeCount"))
 	{
-		getFreezeCount(true);
+		getFreezeCount(response);
 	}
 	
 	// clear all freezes
@@ -695,7 +697,7 @@ int argmain(int argc, char **argv)
 	{
         u32 charge;
         psmGetBatteryChargePercentage(&charge);
-        printf("%d\n", charge);
+        response->responsePrintf(response, "%d\n", charge);
     }
 
     return 0;
@@ -722,6 +724,35 @@ void del_from_pfds(struct pollfd pfds[], int i, int *fd_count)
     (*fd_count)--;
 }
 
+void wifiSendResponse(struct ResponseHandler *handler, void *buffer, u32 bufferSize)
+{
+    struct pollfd *pfd = (struct pollfd *)handler->responseData;
+    int lenXfer = send(pfd->fd, buffer, bufferSize, 0);
+    (void)lenXfer;
+    // TODO: if lenXfer isn't bufferSize, there is a problem - try again? I think that is just for non-blocking
+}
+
+void wifiSendResponsePrintf(struct ResponseHandler *handler, char *fmt, ...)
+{
+    va_list args1;
+    va_start(args1, fmt);
+    va_list args2;
+    va_copy(args2, args1);
+    int stringLen = vsnprintf(NULL, 0, fmt, args1);
+    char *buffer = (char *)malloc(stringLen + 1);
+    va_end(args1);
+    vsnprintf(buffer, stringLen + 1, fmt, args2);
+    va_end(args2);
+
+	if( stringLen > 0 )
+	{
+		// Don't include the null terminator
+	    wifiSendResponse(handler, buffer, stringLen);
+	}
+
+    free(buffer);
+}
+
 int main()
 {
     char *linebuf = malloc(sizeof(char) * MAX_LINE_LENGTH);
@@ -742,6 +773,17 @@ int main()
 	
 	Result rc;
 	int fr_count = 0;
+
+    struct ResponseHandler usbResponse;
+    rc = usbBotInitialize(&usbResponse, argmain);
+    if(R_FAILED(rc))
+        fatalThrow(rc);
+
+    struct ResponseHandler wifiResponse;
+    wifiResponse.response       = wifiSendResponse;
+    wifiResponse.responsePrintf = wifiSendResponsePrintf;
+    wifiResponse.responseData   = NULL; // This gets the pfds[] at the time of response
+    wifiResponse.argmain        = argmain;
 	
     initFreezes();
 
@@ -769,7 +811,7 @@ int main()
     if (R_SUCCEEDED(rc))
         rc = threadStart(&clickThread);
     
-	flashLed();
+    flashLed();
 
     while (appletMainLoop())
     {
@@ -813,26 +855,29 @@ int main()
                                 readEnd = true;
                                 linebuf[readBytesSoFar - 1] = 0;
 
-                                fflush(stdout);
-                                dup2(pfds[i].fd, STDOUT_FILENO);
+                                wifiResponse.responseData = &pfds[i];
 
-                                parseArgs(linebuf, &argmain);
+                                parseArgs(linebuf, &argmain, &wifiResponse);
 
                                 if(echoCommands){
-                                    printf("%s\n",linebuf);
+                                    wifiResponse.responsePrintf(&wifiResponse, "%s\n",linebuf);
                                 }
+
+                                wifiResponse.responseData = NULL;
                             }
                         }
                     }
                 }
             }
         }
-		fr_count = getFreezeCount(false);
+		fr_count = getFreezeCount(NULL);
 		if (fr_count == 0)
 			freeze_thr_state = Idle;
 		mutexUnlock(&freezeMutex);
         svcSleepThread(mainLoopSleepTime * 1e+6L);
     }
+
+    usbBotShutdown(&usbResponse);
 	
 	if (R_SUCCEEDED(rc))
     {
@@ -870,7 +915,7 @@ void sub_freeze(void *arg)
 		
 		// do nothing
 		svcSleepThread(1e+9L);
-		freezecount = getFreezeCount(false);
+		freezecount = getFreezeCount(NULL);
 	}
 	
 	while (1)
@@ -894,10 +939,10 @@ void sub_freeze(void *arg)
         }
 		
 		mutexLock(&freezeMutex);
-		attach();
+		attach(NULL);
 		heap_base = getHeapBase(debughandle);
 		pmdmntGetApplicationProcessId(&pid);
-		tid_now = getTitleId(pid);
+		tid_now = getTitleId(pid, NULL);
 		detach();
 		
 		// don't freeze on startup of new tid to remove any chance of save corruption
@@ -919,12 +964,12 @@ void sub_freeze(void *arg)
 		
 		if (heap_base > 0)
 		{
-			attach();
+			attach(NULL);
 			for (int j = 0; j < FREEZE_DIC_LENGTH; j++)
 			{
 				if (freezes[j].state == 1 && freezes[j].titleId == tid_now)
 				{
-					writeMem(heap_base + freezes[j].address, freezes[j].size, freezes[j].vData);
+					writeMem(heap_base + freezes[j].address, freezes[j].size, freezes[j].vData, NULL);
 				}
 			}
 			detach();
@@ -945,7 +990,7 @@ void sub_touch(void *arg)
         if (touchPtr->state == 1)
         {
             mutexLock(&touchMutex); // don't allow any more assignments to the touch var (will lock the main thread)
-            touch(touchPtr->states, touchPtr->sequentialCount, touchPtr->holdTime, touchPtr->hold, &touchToken);
+            touch(touchPtr->states, touchPtr->sequentialCount, touchPtr->holdTime, touchPtr->hold, &touchToken, NULL);
             free(touchPtr->states);
             touchPtr->state = 0;
             mutexUnlock(&touchMutex);
@@ -968,7 +1013,7 @@ void sub_key(void *arg)
         if (keyPtr->state == 1)
         {
             mutexLock(&keyMutex); 
-            key(keyPtr->states, keyPtr->sequentialCount);
+            key(keyPtr->states, keyPtr->sequentialCount, NULL);
             free(keyPtr->states);
             keyPtr->state = 0;
             mutexUnlock(&keyMutex);
@@ -991,11 +1036,14 @@ void sub_click(void *arg)
         if (currentClick != NULL)
         {
             mutexLock(&clickMutex);
-            clickSequence(currentClick, &clickToken);
+            clickSequence(currentClick, &clickToken, NULL);
             free(currentClick); currentClick = NULL;
             mutexUnlock(&clickMutex);
-            printf("done\n");
-        }
+            //Note: remove this printf because it is dangerous, generating a response as a later time
+            //when another command can come in. The only way it can be safe is to remove this thread
+            //and do the work at the time of the call to makeClickSeq
+            //printf("done\n");
+       }
 
         clickToken = 0;
 

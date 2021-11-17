@@ -23,19 +23,21 @@ u64 pollRate = 17; // polling is linked to screen refresh rate (system UI) or ga
 u32 fingerDiameter = 50;
 HiddbgHdlsSessionId sessionId = {0};
 
-void attach()
+void initController(struct ResponseHandler *response);
+
+void attach(struct ResponseHandler *response)
 {
     u64 pid = 0;
     Result rc = pmdmntGetApplicationProcessId(&pid);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("pmdmntGetApplicationProcessId: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "pmdmntGetApplicationProcessId: %d\n", rc);
 
     if (debughandle != 0)
         svcCloseHandle(debughandle);
 
     rc = svcDebugActiveProcess(&debughandle, pid);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("svcDebugActiveProcess: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "svcDebugActiveProcess: %d\n", rc);
 }
 
 void detach(){
@@ -43,28 +45,29 @@ void detach(){
         svcCloseHandle(debughandle);
 }
 
-void detachController()
+void detachController(struct ResponseHandler *response)
 {
-    initController();
+    initController( response );
 
     Result rc = hiddbgDetachHdlsVirtualDevice(controllerHandle);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("hiddbgDetachHdlsVirtualDevice: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "hiddbgDetachHdlsVirtualDevice: %d\n", rc);
     rc = hiddbgReleaseHdlsWorkBuffer(sessionId);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("hiddbgReleaseHdlsWorkBuffer: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "hiddbgReleaseHdlsWorkBuffer: %d\n", rc);
     hiddbgExit();
     bControllerIsInitialised = false;
 
     sessionId.id = 0;
 }
 
-u64 getMainNsoBase(u64 pid){
+u64 getMainNsoBase(u64 pid, struct ResponseHandler *response)
+{
     LoaderModuleInfo proc_modules[2];
     s32 numModules = 0;
     Result rc = ldrDmntGetProcessModuleInfo(pid, proc_modules, 2, &numModules);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("ldrDmntGetProcessModuleInfo: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "ldrDmntGetProcessModuleInfo: %d\n", rc);
 
     LoaderModuleInfo *proc_module = 0;
     if(numModules == 2){
@@ -75,7 +78,8 @@ u64 getMainNsoBase(u64 pid){
     return proc_module->base_address;
 }
 
-u64 getHeapBase(Handle handle){
+u64 getHeapBase(Handle handle)
+{
     MemoryInfo meminfo;
     memset(&meminfo, 0, sizeof(MemoryInfo));
     u64 heap_base = 0;
@@ -94,20 +98,22 @@ u64 getHeapBase(Handle handle){
     return heap_base;
 }
 
-u64 getTitleId(u64 pid){
+u64 getTitleId(u64 pid, struct ResponseHandler *response)
+{
     u64 titleId = 0;
     Result rc = pminfoGetProgramId(&titleId, pid);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("pminfoGetProgramId: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "pminfoGetProgramId: %d\n", rc);
     return titleId;
 }
 
-void getBuildID(MetaData* meta, u64 pid){
+void getBuildID(MetaData* meta, u64 pid, struct ResponseHandler *response)
+{
     LoaderModuleInfo proc_modules[2];
     s32 numModules = 0;
     Result rc = ldrDmntGetProcessModuleInfo(pid, proc_modules, 2, &numModules);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("ldrDmntGetProcessModuleInfo: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "ldrDmntGetProcessModuleInfo: %d\n", rc);
 
     LoaderModuleInfo *proc_module = 0;
     if(numModules == 2){
@@ -118,30 +124,31 @@ void getBuildID(MetaData* meta, u64 pid){
     memcpy(meta->buildID, proc_module->build_id, 0x20);
 }
 
-MetaData getMetaData(){
+MetaData getMetaData(struct ResponseHandler *response)
+{
     MetaData meta;
-    attach();
+    attach(response);
     u64 pid = 0;    
     Result rc = pmdmntGetApplicationProcessId(&pid);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("pmdmntGetApplicationProcessId: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "pmdmntGetApplicationProcessId: %d\n", rc);
     
-    meta.main_nso_base = getMainNsoBase(pid);
+    meta.main_nso_base = getMainNsoBase(pid, response);
     meta.heap_base =  getHeapBase(debughandle);
-    meta.titleID = getTitleId(pid);
-    getBuildID(&meta, pid);
+    meta.titleID = getTitleId(pid, response);
+    getBuildID(&meta, pid, response);
 
     detach();
     return meta;
 }
 
-void initController()
+void initController(struct ResponseHandler *response)
 {
     if(bControllerIsInitialised) return;
     //taken from switchexamples github
     Result rc = hiddbgInitialize();
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("hiddbgInitialize: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "hiddbgInitialize: %d\n", rc);
     // Set the controller type to Pro-Controller, and set the npadInterfaceType.
     controllerDevice.deviceType = HidDeviceType_FullKey3;
     controllerDevice.npadInterfaceType = HidNpadInterfaceType_Bluetooth;
@@ -158,81 +165,81 @@ void initController()
     controllerState.analog_stick_r.x = 0x0;
     controllerState.analog_stick_r.y = -0x0;
     rc = hiddbgAttachHdlsWorkBuffer(&sessionId);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("hiddbgAttachHdlsWorkBuffer: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "hiddbgAttachHdlsWorkBuffer: %d\n", rc);
     rc = hiddbgAttachHdlsVirtualDevice(&controllerHandle, &controllerDevice);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("hiddbgAttachHdlsVirtualDevice: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "hiddbgAttachHdlsVirtualDevice: %d\n", rc);
     //init a dummy keyboard state for assignment between keypresses
     dummyKeyboardState.keys[3] = 0x800000000000000UL; // Hackfix found by Red: an unused key press (KBD_MEDIA_CALC) is required to allow sequential same-key presses. bitfield[3]
     bControllerIsInitialised = true;
 }
 
-void poke(u64 offset, u64 size, u8* val)
+void poke(u64 offset, u64 size, u8* val, struct ResponseHandler *response)
 {
-    attach();
-    writeMem(offset, size, val);
+    attach(response);
+    writeMem(offset, size, val, response);
     detach();
 }
 
-void writeMem(u64 offset, u64 size, u8* val)
+void writeMem(u64 offset, u64 size, u8* val, struct ResponseHandler *response)
 {
 	Result rc = svcWriteDebugProcessMemory(debughandle, val, offset, size);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("svcWriteDebugProcessMemory: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "svcWriteDebugProcessMemory: %d\n", rc);
 }
 
-void peek(u64 offset, u64 size)
+void peek(u64 offset, u64 size, struct ResponseHandler *response)
 {
     u8 *out = malloc(sizeof(u8) * size);
-    attach();
-    readMem(out, offset, size);
+    attach(response);
+    readMem(out, offset, size, response);
     detach();
 
     u64 i;
     for (i = 0; i < size; i++)
     {
-        printf("%02X", out[i]);
+        response->responsePrintf(response, "%02X", out[i]);
     }
-    printf("\n");
+    response->responsePrintf(response, "\n");
     free(out);
 }
 
-void readMem(u8* out, u64 offset, u64 size)
+void readMem(u8* out, u64 offset, u64 size, struct ResponseHandler *response)
 {
 	Result rc = svcReadDebugProcessMemory(out, debughandle, offset, size);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("svcReadDebugProcessMemory: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "svcReadDebugProcessMemory: %d\n", rc);
 }
 
-void click(HidNpadButton btn)
+void click(HidNpadButton btn, struct ResponseHandler *response)
 {
-    initController();
-    press(btn);
+    initController(response);
+    press(btn, response);
     svcSleepThread(buttonClickSleepTime * 1e+6L);
-    release(btn);
+    release(btn, response);
 }
-void press(HidNpadButton btn)
+void press(HidNpadButton btn, struct ResponseHandler *response)
 {
-    initController();
+    initController(response);
     controllerState.buttons |= btn;
     Result rc = hiddbgSetHdlsState(controllerHandle, &controllerState);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("hiddbgSetHdlsState: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "hiddbgSetHdlsState: %d\n", rc);
 }
 
-void release(HidNpadButton btn)
+void release(HidNpadButton btn, struct ResponseHandler *response)
 {
-    initController();
+    initController(response);
     controllerState.buttons &= ~btn;
     Result rc = hiddbgSetHdlsState(controllerHandle, &controllerState);
-    if (R_FAILED(rc) && debugResultCodes)
-        printf("hiddbgSetHdlsState: %d\n", rc);
+    if (R_FAILED(rc) && debugResultCodes && response)
+        response->responsePrintf(response, "hiddbgSetHdlsState: %d\n", rc);
 }
 
-void setStickState(int side, int dxVal, int dyVal)
+void setStickState(int side, int dxVal, int dyVal, struct ResponseHandler *response)
 {
-    initController();
+    initController(response);
     if (side == JOYSTICK_LEFT)
     {	
         controllerState.analog_stick_l.x = dxVal;
@@ -259,20 +266,20 @@ void reverseArray(u8* arr, int start, int end)
     }   
 } 
 
-u64 followMainPointer(s64* jumps, size_t count) 
+u64 followMainPointer(s64* jumps, size_t count, struct ResponseHandler *response) 
 {
 	u64 offset;
     u64 size = sizeof offset;
 	u8 *out = malloc(size);
-	MetaData meta = getMetaData(); 
+	MetaData meta = getMetaData(response); 
 	
-	attach();
-	readMem(out, meta.main_nso_base + jumps[0], size);
+	attach(response);
+	readMem(out, meta.main_nso_base + jumps[0], size, response);
 	offset = *(u64*)out;
 	int i;
     for (i = 1; i < count; ++i)
 	{
-		readMem(out, offset + jumps[i], size);
+		readMem(out, offset + jumps[i], size, response);
 		offset = *(u64*)out;
 	}
 	detach();
@@ -281,9 +288,9 @@ u64 followMainPointer(s64* jumps, size_t count)
     return offset;
 }
 
-void touch(HidTouchState* state, u64 sequentialCount, u64 holdTime, bool hold, u8* token)
+void touch(HidTouchState* state, u64 sequentialCount, u64 holdTime, bool hold, u8* token, struct ResponseHandler *response)
 {
-    initController();
+    initController(response);
     state->delta_time = holdTime; // only the first touch needs this for whatever reason
     for (u32 i = 0; i < sequentialCount; i++)
     {
@@ -308,9 +315,9 @@ void touch(HidTouchState* state, u64 sequentialCount, u64 holdTime, bool hold, u
     hiddbgUnsetTouchScreenAutoPilotState();
 }
 
-void key(HiddbgKeyboardAutoPilotState* states, u64 sequentialCount)
+void key(HiddbgKeyboardAutoPilotState* states, u64 sequentialCount, struct ResponseHandler *response)
 {
-    initController();
+    initController(response);
     HiddbgKeyboardAutoPilotState tempState = {0};
     u32 i;
     for (i = 0; i < sequentialCount; i++)
@@ -338,7 +345,7 @@ void key(HiddbgKeyboardAutoPilotState* states, u64 sequentialCount)
     hiddbgUnsetKeyboardAutoPilotState();
 }
 
-void clickSequence(char* seq, u8* token)
+void clickSequence(char* seq, u8* token, struct ResponseHandler *response)
 {
     const char delim = ','; // used for chars and sticks
     const char startWait = 'W';
@@ -350,7 +357,7 @@ void clickSequence(char* seq, u8* token)
     HidNpadButton currKey = {0};
     u64 currentWait = 0;
 
-    initController();
+    initController(response);
     while (command != NULL)
     {
         if ((*token) == 1)
@@ -368,7 +375,7 @@ void clickSequence(char* seq, u8* token)
                 y = parseStringToSignedLong(command);
             if(y > JOYSTICK_MAX) y = JOYSTICK_MAX;
             if(y < JOYSTICK_MIN) y = JOYSTICK_MIN;
-            setStickState(JOYSTICK_LEFT, (s32)x, (s32)y);
+            setStickState(JOYSTICK_LEFT, (s32)x, (s32)y, response);
         }
         else if (!strncmp(command, &startRStick, 1))
         {
@@ -382,19 +389,19 @@ void clickSequence(char* seq, u8* token)
                 y = parseStringToSignedLong(command);
             if(y > JOYSTICK_MAX) y = JOYSTICK_MAX;
             if(y < JOYSTICK_MIN) y = JOYSTICK_MIN;
-            setStickState(JOYSTICK_RIGHT, (s32)x, (s32)y);
+            setStickState(JOYSTICK_RIGHT, (s32)x, (s32)y, response);
         }
         else if (!strncmp(command, &startPress, 1))
         {
             // press
             currKey = parseStringToButton(&command[1]);
-            press(currKey);
+            press(currKey, response);
         }  
         else if (!strncmp(command, &startRelease, 1))
         {
             // release
             currKey = parseStringToButton(&command[1]);
-            press(currKey);
+            press(currKey, response);
         }   
         else if (!strncmp(command, &startWait, 1))
         {
@@ -406,9 +413,9 @@ void clickSequence(char* seq, u8* token)
         {
             // click
             currKey = parseStringToButton(command);
-            press(currKey);
+            press(currKey, response);
             svcSleepThread(buttonClickSleepTime * 1e+6L);
-            release(currKey);
+            release(currKey, response);
         }
 
         command = strtok(NULL, &delim);
